@@ -1,5 +1,5 @@
-pyPRISM\.potential\.Exponential module
-======================================
+pyPRISM\.potential\.Exponential
+===============================
 
 .. automodule:: pyPRISM.potential.Exponential
     :members:

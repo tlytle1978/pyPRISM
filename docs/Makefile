@@ -28,6 +28,7 @@ buildapi:
 	sphinx-apidoc -fMeT ../pyPRISM -o api
 		@echo "Auto-generation of API documentation finished. " \
 		"The generated files are in 'api/'"
+	sed -i -e 's/Module//g' api/*
 	sed -i -e '/Submodules/,+1d' api/*
 	sed -i -e '/Subpackages/,+1d' api/*
 	sed -i -e 's/pyPRISM\ package/API/' api/pyPRISM.rst

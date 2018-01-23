@@ -1,25 +1,29 @@
 #!python
-from __future__ import division,print_function
+from __future__ import division, print_function
 from pyPRISM.potential.Potential import Potential
 import numpy as np
 
 class LennardJones(Potential):
     r'''12-6 Lennard-Jones potential
-    
+
 
     **Mathematical Definition**
-    
-    .. math::
-    
-        U_{\alpha,\beta}(r) = 4\epsilon_{\alpha,\beta}\left[\left(\frac{\sigma_{\alpha,\beta}}{r}\right)^{12.0} - \left(\frac{\sigma_{\alpha,\beta}}{r}\right)^{6.0}\right]
 
     .. math::
-    
+
+        U_{\alpha,\beta}(r) =
+        4\epsilon_{\alpha,\beta}\left[
+                                       \left(\frac{\sigma_{\alpha,\beta}}{r}\right)^{12.0} -
+                                       \left(\frac{\sigma_{\alpha,\beta}}{r}\right)^{6.0}
+                                \right]
+
+    .. math::
+
         U_{\alpha,\beta}^{shift}(r) = U_{\alpha,\beta}(r) - U_{\alpha,\beta}(r_{cut})
-    
-    
+
+
     **Variable Definitions**
-    
+
     :math:`\epsilon_{\alpha,\beta}`
         Strength of attraction between sites :math:`\alpha` and :math:`\beta`.
 
@@ -28,11 +32,11 @@ class LennardJones(Potential):
         :math:`\beta`.
 
     :math:`r`
-        Distance between sites. 
-    
+        Distance between sites.
+
     :math:`r_{cut}`
-        Cutoff distance between sites. 
-   
+        Cutoff distance between sites.
+
     **Description**
 
         The classic 12-6 LJ potential. To facilitate direct comparison with
@@ -40,8 +44,8 @@ class LennardJones(Potential):
         a specified cutoff distance by setting the rcut and shift parameters.
         The full (non-truncated) LJ potential is accessed using
         :math:`r_{cut}` =  *None* and :math:`shift` = *False*.
-    
-    
+
+
     Example
     -------
     .. code-block:: python
@@ -51,41 +55,44 @@ class LennardJones(Potential):
         #Define a PRISM system and set the A-B interaction potential
         sys = pyPRISM.System(['A','B'],kT=1.0)
         sys.domain = pyPRISM.Domain(dr=0.1,length=1024)
-        sys.potential['A','B'] = pyPRISM.potential.LennardJones(epsilon=1.0,sigma=1.0,rcut=2.5,shift=True)
+        sys.potential['A','B'] = pyPRISM.potential.LennardJones(epsilon=1.0,
+                                                                sigma=1.0,
+                                                                rcut=2.5,
+                                                                shift=True)
 
-    
+
     '''
-    def __init__(self,epsilon,sigma,rcut=None,shift=False):
+    def __init__(self, epsilon, sigma, rcut=None, shift=False):
         r''' Constructor
-        
+
         Arguments
         ---------
         epsilon: float
             Depth of attractive well
-            
+
         sigma: float
             Contact distance (i.e. U_{\alpha,\beta}(sigma) = 0)
-            
+
         rcut: float, *optional*
             Cutoff distance for potential. Useful for comparing directly to results
-            from simulations where cutoffs are necessary. 
-    
+            from simulations where cutoffs are necessary.
+
         shift: bool,*optional*
             If :math:`r_{cut}` is specified, shift the potential by its value
             at the cutoff. If :math:`r_{cut}` is not specified, this parameter
             is ignored.
-    
+
         '''
         self.epsilon = epsilon
         self.sigma = sigma
-        self.rcut  = rcut
+        self.rcut = rcut
         self.shift = shift
-        self.funk  = lambda r: 4 * epsilon * ((sigma/r)**(12.0) - (sigma/r)**(6.0))
-        
+        self.funk = lambda r: 4 * epsilon * ((sigma/r)**(12.0) - (sigma/r)**(6.0))
+
     def __repr__(self):
         return '<Potential: LennardJones>'
-        
-    def calculate(self,r):
+
+    def calculate(self, r):
         r'''Calculate value of potential
 
         Attributes
@@ -94,19 +101,20 @@ class LennardJones(Potential):
             Array of pair distances at which to calculate potential values
         '''
         magnitude = self.funk(r)
-        
+
         if self.rcut is not None:
             if self.shift:
                 magnitude -= self.funk(self.rcut)
-            magnitude[r>self.rcut] = 0.0
-                
+            magnitude[r > self.rcut] = 0.0
+
         return magnitude
 
-    def calculate_attractive(self,r):
-        r'''Calculate the attractive tail of the Lennard Jones potential. Returns zero at :math:`r<\sigma`
+    def calculate_attractive(self, r):
+        r'''Calculate the attractive tail of the Lennard Jones potential.
+
+        Returns zero at :math:`r<\sigma`
         '''
         magnitude = np.zeros_like(r)
-        mask = r>self.sigma
+        mask = r > self.sigma
         magnitude[mask] = self.calculate(r)[mask]
         return magnitude
-        

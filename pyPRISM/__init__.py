@@ -13,8 +13,3 @@ from pyPRISM import potential
 from pyPRISM import omega
 
 from pyPRISM import util
-
-
-
-
-

@@ -1,45 +1,47 @@
 #!python
-from __future__ import division,print_function
+from __future__ import division, print_function
 from pyPRISM.potential.Potential import Potential
-import numpy as np
+
 class HardCoreLennardJones(Potential):
     r'''12-6 Lennard-Jones potential with Hard Core
 
-    .. warning:: 
+    .. warning::
 
-        This potential uses a slightly different form than what is 
+        This potential uses a slightly different form than what is
         implemented for the classic LJ potential. This means that the epsilon
         in the LJ and HCLJ potentials will not correspond to the same
         interaction strengths.
 
     **Mathematical Definition**
-    
+
     .. math::
-    
-        U_{\alpha,\beta}(r>\sigma_{\alpha,\beta}) = \epsilon_{\alpha,\beta}\left[\left(\frac{\sigma_{\alpha,\beta}}{r}\right)^{12} - 2 \left(\frac{\sigma_{\alpha,\beta}}{r}\right)^{6}\right]
-    
+
+        U_{\alpha,\beta}(r>\sigma_{\alpha,\beta}) =
+        \epsilon_{\alpha,\beta}\left[\left(\frac{\sigma_{\alpha,\beta}}{r}\right)^{12}
+        - 2 \left(\frac{\sigma_{\alpha,\beta}}{r}\right)^{6}\right]
+
     .. math::
-    
+
         U_{\alpha,\beta}(r\leq\sigma_{\alpha,\beta}) = C^{high}
-    
-    
+
+
     **Variable Definitions**
-    
+
     :math:`\epsilon_{\alpha,\beta}`
-        Strength of interaction (attraction or repulsion) between sites 
+        Strength of interaction (attraction or repulsion) between sites
 	:math:`\alpha` and :math:`\beta`.
 
     :math:`\sigma_{\alpha,\beta}`
-        Length scale of interaction between sites 
+        Length scale of interaction between sites
 	:math:`\alpha` and :math:`\beta`.
 
     :math:`r`
-        Distance between sites. 
+        Distance between sites.
 
     :math:`C^{high}`
         High value used to approximate an infinite potential due to overlap
-    
-   
+
+
     **Description**
 
     	Unlike the classic LJ potential, the HCLJ potential has an infinitely
@@ -52,45 +54,47 @@ class HardCoreLennardJones(Potential):
        BLENDS - NUMERICAL INVESTIGATION OF MOLECULAR CLOSURE APPROXIMATIONS.
        Journal of Chemical Physics, 1993. 98(11): p. 9080-9093.
        [`link <https://doi.org/10.1063/1.464466>`__]
-    
-    
+
+
     Example
     -------
     .. code-block:: python
 
         import pyPRISM
-	
+
         #Define a PRISM system and set the A-B interaction potential
 	sys = pyPRISM.System(['A','B'],kT=1.0)
 	sys.domain = pyPRISM.Domain(dr=0.1,length=1024)
-        sys.potential['A','B'] = pyPRISM.potential.HardCoreLennardJones(epsilon=1.0,sigma=1.0,high_value=10**6)
+        sys.potential['A','B'] = pyPRISM.potential.HardCoreLennardJones(epsilon=1.0,
+                                                                        sigma=1.0,
+                                                                        high_value=10**6)
 
-    
+
     '''
-    def __init__(self,epsilon,sigma,high_value=1e6):
+    def __init__(self, epsilon, sigma, high_value=1e6):
         r''' Constructor
-        
+
         Arguments
         ---------
         epsilon: float
             Depth of attractive well
-            
+
         sigma: float
             Contact distance (i.e. low distance where potential magnitude = 0)
-            
+
         high_value: float, *optional*
             High value used to approximate an infinite potential due to overlap
-        
+
         '''
-        self.epsilon = epsilon 
+        self.epsilon = epsilon
         self.sigma = sigma
         self.high_value = high_value
-        self.funk  = lambda r: epsilon * ((sigma/r)**(12.0) - 2.0*(sigma/r)**(6.0))
-        
+        self.funk = lambda r: epsilon * ((sigma/r)**(12.0) - 2.0*(sigma/r)**(6.0))
+
     def __repr__(self):
         return '<Potential: HardCoreLennardJones>'
-        
-    def calculate(self,r):
+
+    def calculate(self, r):
         r'''Calculate value of potential
 
         Attributes
@@ -99,7 +103,6 @@ class HardCoreLennardJones(Potential):
             Array of pair distances at which to calculate potential values
         '''
         magnitude = self.funk(r)
-        magnitude[r<=self.sigma] = self.high_value
-                
+        magnitude[r <= self.sigma] = self.high_value
+
         return magnitude
-        

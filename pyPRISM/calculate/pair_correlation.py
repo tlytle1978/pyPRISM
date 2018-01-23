@@ -1,27 +1,27 @@
 #!python
-from __future__ import division,print_function
+from __future__ import division, print_function
 from pyPRISM.core.Space import Space
 
 def pair_correlation(PRISM):
-    r'''Calculate the Real-space pair correlation function 
+    r'''Calculate the Real-space pair correlation function
 
     Parameters
     ----------
     PRISM: pyPRISM.core.PRISM
         A **solved** PRISM object.
-    
+
     Returns
     -------
     pairCorr: pyPRISM.core.MatrixArray
         The full MatrixArray of pair correlation functions.
-    
+
 
     **Mathematical Definition**
 
     .. math::
-         
+
         g_{\alpha,\beta}(r) = h_{\alpha,\beta}(r) + 1.0
-    
+
     **Variable Definitions**
 
         - :math:`g_{\alpha,\beta}(r)`
@@ -41,7 +41,7 @@ def pair_correlation(PRISM):
         system.
 
         After convergence of a PRISM object, the stored total correlation
-        attribute function can simply be shifted to obtain the :math:`g(r)` 
+        attribute function can simply be shifted to obtain the :math:`g(r)`
 
 
     .. warning::
@@ -49,7 +49,7 @@ def pair_correlation(PRISM):
         Passing an unsolved PRISM object to this function will still produce
         output based on the default values of the attributes of the PRISM
         object.
-    
+
 
     Example
     -------
@@ -58,9 +58,9 @@ def pair_correlation(PRISM):
         import pyPRISM
 
         sys = pyPRISM.System(['A','B'])
-        
+
         # ** populate system variables **
-        
+
         PRISM = sys.createPRISM()
 
         PRISM.solve()
@@ -70,12 +70,12 @@ def pair_correlation(PRISM):
         rdf_AA = rdf['A','A']
         rdf_AB = rdf['A','B']
         rdf_BB = rdf['B','B']
-    
+
     '''
-    
+
     if PRISM.totalCorr.space == Space.Fourier:
         PRISM.sys.domain.MatrixArray_to_real(PRISM.totalCorr)
-    
+
     PRISM.pairCorr = PRISM.totalCorr + 1.0
-    
+
     return PRISM.pairCorr
