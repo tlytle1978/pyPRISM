@@ -337,15 +337,19 @@ class MatrixArray(object):
         cols_self = self.data.shape[2]
         rows_other = other.data.shape[1]
         cols_other = other.data.shape[2]
+
+        # sanity check
+        assert cols_self == rows_other
         
         result = np.zeros_like(self.data)
         for i in range(rows_self):
           for j in range(cols_other):
             for k in range(cols_self):
-              #temp = fftconvolve(self.data[:,i,k],other.data[:,k,j],mode='same')
+              # temp = fftconvolve(self.data[:,i,k],other.data[:,k,j],mode='same')
               temp = fftconvolve(self.data[:,i,k],other.data[:,k,j],mode='full')[:self.data.shape[0]]
-              #temp = convolve(self.data[:,i,k],other.data[:,k,j],mode='constant')
-              result[:,i,j] += temp*dr
+              # temp = convolve(self.data[:,i,k],other.data[:,k,j],mode='constant')
+              # temp = np.convolve(self.data[:,i,k],other.data[:,k,j],mode='full')[:self.data.shape[0]]
+              result[:,i,j] += (temp*dr).flatten()
         
         if inplace:
             self.data = result 

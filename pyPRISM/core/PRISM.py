@@ -99,12 +99,41 @@ class PRISM:
         #cost function input and output
         self.x         = np.zeros(sys.rank*sys.rank*sys.domain.length)
         self.y         = np.zeros(sys.rank*sys.rank*sys.domain.length)
+        self.WCWx         = np.zeros(sys.rank*sys.rank*sys.domain.length)
+        self.WCWy         = np.zeros(sys.rank*sys.rank*sys.domain.length)
+
+        # check for molecular closures
+        self.MolecularClosure=False
+        for (i,j),(t1,t2),closure in self.sys.closure.iterpairs():
+            if isinstance(closure,MolecularClosure):
+                self.MolecularClosure=True
+                break # one molecular closure found, no need to search futher
+
 
         # The omega objects must be converted to a MatrixArray of the actual correlation
         # function values rather than a table of OmegaObjects.
         applyFunc = lambda x: x.calculate(sys.domain.k)
         self.omega  = self.sys.omega.apply(applyFunc,inplace=False).exportToMatrixArray(space=Space.Fourier)
         self.omega *= sys.density.site #omega should always be scaled by site density 
+
+        # omega_real is optional so we need to hendle this carefully
+        try:
+            self.sys.omega_real.check()
+        except ValueError:
+            # some or all omega_real not specified
+            self.omega_real = None
+        else:
+            applyFunc = lambda x: x.calculate(sys.domain.r)
+            self.omega_real  = self.sys \
+                                   .omega_real \
+                                   .apply(applyFunc,inplace=False) \
+                                   .exportToMatrixArray(space=Space.Real)
+            self.omega_real *= sys.density.site #omega should always be scaled by site density 
+
+        # if user tries to use molecular closures without providing omega_real, throw error
+        if self.MolecularClosure and (self.omega_real is None):
+            err = 'All omega(r) pairs must be specified in sys.omega_real to use molecular closures'
+            raise ValueError(err)
         
         # Spaces are set based on when they are used in self.cost(...). In some cases,
         # this is redundant because these array's will be overwritten with copies and
@@ -114,6 +143,9 @@ class PRISM:
         self.GammaIn    = MatrixArray(length=sys.domain.length,rank=sys.rank,space=Space.Real,types=sys.types)
         self.GammaOut   = MatrixArray(length=sys.domain.length,rank=sys.rank,space=Space.Real,types=sys.types)
         self.OC         = MatrixArray(length=sys.domain.length,rank=sys.rank,space=Space.Fourier,types=sys.types)
+        self.C0delC     = MatrixArray(length=sys.domain.length,rank=sys.rank,space=Space.Real,types=sys.types)
+        self.WCWIn      = MatrixArray(length=sys.domain.length,rank=sys.rank,space=Space.Real,types=sys.types)
+        self.WCWOut     = MatrixArray(length=sys.domain.length,rank=sys.rank,space=Space.Real,types=sys.types)
         self.I          = IdentityMatrixArray(length=sys.domain.length,rank=sys.rank,space=Space.Fourier,types=sys.types)
         
     def __repr__(self):
@@ -144,25 +176,24 @@ class PRISM:
         # directCorr is calculated directly in Real space but immediately 
         # inverted to Fourier space. We must reset this from the last call.
         self.directCorr.space = Space.Real 
-        MolClosureFlag = 0
+        self.C0delC.space = Space.Real 
+
         for (i,j),(t1,t2),closure in self.sys.closure.iterpairs():
             if isinstance(closure,AtomicClosure):
                 self.directCorr[t1,t2] = closure.calculate(self.sys.domain.r,self.GammaIn[t1,t2])
+                self.C0delC[t1,t2] = self.directCorr[t1,t2] 
             elif isinstance(closure,MolecularClosure):
-                #raise NotImplementedError('Molecular closures are untested and not fully implemented.')
-                #self.directCorr[t1,t2] = closure.calculate(self.sys.domain.r,self.GammaIn[t1,t2],self.sys.domain.to_real(self.omega[t1,t1]),self.sys.domain.to_real(self.omega[t2,t2]))
-                MolClosureFlag = 1
+                pass # all molecular closures are handled simulaneously below
             else:
                 raise ValueError('Closure type not recognized')
         
-        if MolClosureFlag:
-            self.sys.domain.MatrixArray_to_real(self.totalCorr)
-            self.sys.domain.MatrixArray_to_real(self.omega)
-            self.directCorr = closure.calculate(self.sys.domain.r,self.totalCorr,self.directCorr,self.omega)
-            self.sys.domain.MatrixArray_to_fourier(self.totalCorr)
-            self.sys.domain.MatrixArray_to_fourier(self.omega)
-                
-            
+        if self.MolecularClosure:
+            guess = (-1.0-self.GammaIn.data)
+            WCWresult = self.WCWsolve(guess=guess.reshape((-1,)),method='df-sane',options={'disp':False})
+            for (i,j),(t1,t2),closure in self.sys.closure.iterpairs():
+                if isinstance(closure,MolecularClosure):
+                    self.directCorr[t1,t2] = self.WCWOut[t1,t2] 
+        
         self.sys.domain.MatrixArray_to_fourier(self.directCorr)
         
         self.OC = self.omega.dot(self.directCorr)
@@ -179,6 +210,7 @@ class PRISM:
         self.y = self.sys.domain.long_r*(self.GammaOut.data - self.GammaIn.data)
         
         return self.y.reshape((-1,))
+    
     def solve(self,guess=None,method='krylov',options=None):
         '''Attempt to numerically solve the PRISM equations
         
@@ -237,3 +269,101 @@ class PRISM:
         return result
         
     
+    def WCWcost(self,WCWx):
+        r'''Cost function 
+        
+        Cost function to iteratively solve for the :math:`\Omega(r)*C(r)*\Omega(r)`
+        function.
+
+        The goal of the solve method is to numerically optimize the input
+        (:math:`[\Omega(r)*C(r)*\Omega(r)]_{in}`) 
+        so that the output (:math:`[\Omega(r)*C(r)*\Omega(r)]_{in}-[\Omega(r)*C(r)*\Omega(r)]_{out}`) 
+        is minimized to zero.
+        
+        '''
+        self.WCWx = WCWx #store input
+
+        # The np.copy is important otherwise x saves state between calls to
+        # this function.
+        self.WCWIn.data = np.copy(WCWx.reshape((-1,self.sys.rank,self.sys.rank)))
+        # self.WCWIn     /= self.sys.domain.long_r
+        
+        if self.C0delC.space == Space.Fourier:
+          self.sys.domain.MatrixArray_to_real(self.C0delC)
+        self.WCWOut.space = Space.Fourier 
+        
+        # XXX Need to better handle the case where you have mixed
+        # atomic/molecular closures. We don't want to be 
+        #
+        for (i,j),(t1,t2),closure in self.sys.closure.iterpairs():
+            if isinstance(closure,MolecularClosure):
+                closure.calculate(self.sys.domain.r,self.WCWIn[t1,t2],self.GammaIn[t1,t2])
+
+                #mask_lo = self.sys.domain.r<closure.sigma
+                value = closure.value.copy()
+                #value[mask_lo] = 0.0# closure.C0[mask_lo]
+                
+                self.C0delC[t1,t2] = value
+        
+        # self.sys.domain.MatrixArray_to_fourier(self.C0delC)
+        # self.WCWOut = self.omega.dot(self.C0delC).dot(self.omega)
+        # self.sys.domain.MatrixArray_to_real(self.WCWOut)
+
+        dr = self.sys.domain.dr
+        self.WCWOut = self.omega_real.MatrixConvolve(self.C0delC,dr).MatrixConvolve(self.omega_real,dr)
+
+        for (i,j),(t1,t2),closure in self.sys.closure.iterpairs():
+            if isinstance(closure,MolecularClosure):
+                #closure values should still be set from previous iter
+
+                mask_lo = self.sys.domain.r<closure.sigma
+                value = self.WCWOut[t1,t2].copy()
+                value[mask_lo] = -1 - self.GammaIn[t1,t2][mask_lo]
+                self.WCWOut[t1,t2] = value
+        
+        self.WCWy = (self.WCWOut.data - self.WCWIn.data)
+        # self.WCWy = self.sys.domain.long_r*(self.WCWOut.data - self.WCWIn.data)
+        
+        return self.WCWy.reshape((-1,))
+    
+    def WCWsolve(self,guess=None,method='krylov',options=None):
+        '''Attempt to numerically solve for the W*C*W matrix
+        
+        Using the supplied inputs (in the constructor), we attempt to numerically
+        solve for the W*C*W matrix using the scheme laid out in :func:`cost`. If the 
+        numerical solution process is successful, the attributes of this class
+        will contain the solved values for a given input i.e. self.WCWOut will
+        contain the numerically optimized (solved) WCWOut.
+
+        Parameters
+        ----------
+        guess: np.ndarray, size (rank*rank*length)
+            The initial guess of :math:`\Omega(r)*C(r)*\Omega(r)` to the numerical 
+            solution process.
+            The numpy array should be of size rank x rank x length corresponding to 
+            the a full flattened MatrixArray. If not specified, an initial guess
+            of all zeros is used. 
+            
+        method: string
+            Set the type of optimization scheme to use. The scipy documentation
+            for `scipy.optimize.root
+            <https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.root.html>`__
+            details the possible values for this parameter. 
+            
+
+        options: dict
+            Dictionary of options specific to the chosen solver method. The
+            scipy documentation for `scipy.optimize.root
+            <https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.root.html>`__
+            details the possible values for this parameter. 
+        
+        '''
+        if guess is None:
+            guess = np.zeros(self.sys.rank*self.sys.rank*self.sys.domain.length)
+            
+        if options is None:
+            options = {'disp':True}
+
+        result = root(self.WCWcost,guess,method=method,options=options)
+
+        return result#.reshape((-1,self.sys.rank,self.sys.rank))

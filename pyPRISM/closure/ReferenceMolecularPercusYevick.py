@@ -2,7 +2,6 @@
 from __future__ import division,print_function
 from pyPRISM.closure.MolecularClosure import MolecularClosure
 from pyPRISM.closure.PercusYevick import PercusYevick
-#from pyPRISM.core.MatrixArray import MatrixArray
 
 from scipy.signal import fftconvolve
 from scipy.optimize import fsolve
@@ -68,8 +67,8 @@ class ReferenceMolecularPercusYevick(MolecularClosure):
 
         Parameters
         ----------
-        C0: np.ndarray
-            array of :math:`C_{\alpha,\alpha}_0(r)` values obtained for the solved
+        C0: MatrixArray
+            MatrixArray of :math:`C_{\alpha,\alpha}_0(r)` values obtained for the solved
             athermal reference system
         
         apply_hard_core: bool
@@ -108,7 +107,7 @@ class ReferenceMolecularPercusYevick(MolecularClosure):
         self._sigma =  value
         #self.PY.sigma = value
    
-    def calculate(self,r,totalCorr,directCorr,omega):
+    def calculate(self,r,WCW,gamma):
         r'''Calculate direct correlation function
 
         Arguments
@@ -116,38 +115,43 @@ class ReferenceMolecularPercusYevick(MolecularClosure):
         r: np.ndarray
             array of real-space values associated with :math:`\gamma`
         
-        gamma: np.ndarray
-            array of :math:`\gamma` values used to calculate the direct
+        gamma: MatrixArray
+            MatrixArray of :math:`\gamma` values used to calculate the direct
             correlation function
 
-        omega1,omega2: np.ndarray
-            array of :math:`\omega_{\alpha,\alpha}(r)` or
-            :math:`\omega_{\beta,\beta}(r)` values used to calculate the direct
+        WCW: MatrixArray
+            MatrixArray of :math:`\Omega(r)*C(r)*\Omega(r)*` values 
+            used to calculate the direct
             correlation function. NOTE: these need to be in real-space!
         
         '''
         
         assert self.potential is not None,'Potential for this closure is not set!'
         
-        assert totalCorr.data.shape[0] == len(self.potential),'Domain mismatch!'
+        assert WCW.shape[0] == len(self.potential),'Domain mismatch!'
         
+        self.value = np.zeros_like(self.potential)
+        self.value_lo = np.zeros_like(self.potential)
+        self.value_hi  = np.zeros_like(self.potential)
         if self.apply_hard_core:
             assert self.sigma is not None, 'If apply_hard_core=True, sigma parameter must be set!'
 
-            # apply hard core condition:
-            value = self.C0
+            # calculate closure inside hard core
+            mask = r<self.sigma
+            self.value_lo[mask] = (1.0-np.exp(0.0))*(1.0+WCW[mask]+gamma[mask])
+            self.value_lo[mask] += self.C0[mask]
+            # self.value_lo[mask] = -1.0-gamma[mask]
             
             # calculate closure outside hard core
             mask = r>self.sigma
-            value[mask,:,:] += (1.0-np.exp(self.potential[mask][:, np.newaxis, np.newaxis]))*(1.0+totalCorr.data[mask,:,:])
-            
-            directCorr.data = value
-            directCorr = omega.MatrixConvolve(directCorr,r[1]-r[0]).MatrixConvolve(omega,r[1]-r[0])
-            
+            self.value_hi[mask] = (1.0-np.exp(self.potential[mask]))*(1.0+WCW[mask]+gamma[mask])
+            self.value_hi[mask] += self.C0[mask]
+
+            self.value = self.value_lo + self.value_hi
         else:
             raise AssertionError('Please specify apply_hard_core=True!')
         
-        return directCorr
+        return self.value
 
 
 class RMPY(ReferenceMolecularPercusYevick):
